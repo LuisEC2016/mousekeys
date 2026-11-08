@@ -1,0 +1,30 @@
+diff --git a/src/input/mod.rs b/src/input/mod.rs
+index f1ad493..2e40f63 100644
+--- a/src/input/mod.rs
++++ b/src/input/mod.rs
+@@ -387,10 +387,6 @@ impl State {
+             }
+         }
+ 
+-        if pressed {
+-            self.hide_cursor_if_needed();
+-        }
+-
+         let is_inhibiting_shortcuts = self.is_inhibiting_shortcuts();
+ 
+         // Accessibility modifier grabs should override XKB state changes (e.g. Caps Lock), so we
+@@ -538,6 +534,14 @@ impl State {
+                         }
+                     }
+ 
++                    // hide-when-typing: only real typing hides the cursor, i.e. a non-modifier
++                    // key that reaches the client. Upstream hides on every press before binds
++                    // are checked, so holding Mod/Ctrl to start a bind, or the bind key itself,
++                    // also hid it, which made keyboard pointer control blink on every chord.
++                    if pressed && !modified.is_modifier_key() {
++                        this.hide_cursor_if_needed();
++                    }
++
+                     // Interaction with the active window, immediately update the active window's
+                     // focus timestamp without waiting for a possible pending MRU lock-in delay.
+                     this.niri.mru_apply_keyboard_commit();

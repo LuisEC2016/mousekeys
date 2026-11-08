@@ -1,0 +1,46 @@
+diff --git a/src/input/mod.rs b/src/input/mod.rs
+--- a/src/input/mod.rs
++++ b/src/input/mod.rs
+@@ -2750,6 +2750,12 @@
+ 
+         let mod_key = self.backend.mod_key(&self.niri.config.borrow());
+ 
++        // Virtual pointers (zwlr_virtual_pointer_v1, e.g. keyboard mouse keys bound to
++        // Mod+Ctrl+...) click while the keyboard still holds Mod. For them Mod+button is a
++        // plain click or drag for the client, not niri's Mod+LMB move, Mod+RMB resize or
++        // Mod+MMB view-move gestures, which would otherwise swallow it.
++        let from_virtual_pointer = event.device().id().starts_with("wlr virtual pointer");
++
+         // Ignore release events for mouse clicks that triggered a bind.
+         if self.niri.suppressed_buttons.remove(&button_code) {
+             return;
+@@ -2837,7 +2843,8 @@
+             }
+ 
+             if button == Some(MouseButton::Middle) && !pointer.is_grabbed() {
+-                let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
++                let mod_down = !from_virtual_pointer
++                    && modifiers_from_state(mods).contains(mod_key.to_modifiers());
+                 if mod_down {
+                     let output_ws = if is_overview_open {
+                         self.niri.workspace_under_cursor(true)
+@@ -2882,7 +2889,8 @@
+ 
+                 // Check if we need to start an interactive move.
+                 if button == Some(MouseButton::Left) && !pointer.is_grabbed() {
+-                    let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
++                    let mod_down = !from_virtual_pointer
++                        && modifiers_from_state(mods).contains(mod_key.to_modifiers());
+                     if is_overview_open || mod_down {
+                         let location = pointer.current_location();
+ 
+@@ -2917,7 +2925,8 @@
+                 }
+                 // Check if we need to start an interactive resize.
+                 else if button == Some(MouseButton::Right) && !pointer.is_grabbed() {
+-                    let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
++                    let mod_down = !from_virtual_pointer
++                        && modifiers_from_state(mods).contains(mod_key.to_modifiers());
+                     if mod_down {
+                         let location = pointer.current_location();
+                         let (output, pos_within_output) = self.niri.output_under(location).unwrap();

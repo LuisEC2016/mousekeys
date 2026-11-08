@@ -1,0 +1,38 @@
+diff --git a/src/input/mod.rs b/src/input/mod.rs
+--- a/src/input/mod.rs
++++ b/src/input/mod.rs
+@@ -414,6 +414,17 @@
+         #[cfg(not(feature = "dbus"))]
+         let _ = consumed_by_a11y;
+ 
++        // A key consumed by a bind must not switch the XKB layout. With grp:win_space_toggle,
++        // Space is ISO_Next_Group whenever Super is down, so a Mod+Ctrl+Space bind toggled the
++        // layout on every press even though the key never reaches a client. Remember the
++        // layout here and restore it below if a bind took the key.
++        let layout_before = self
++            .niri
++            .seat
++            .get_keyboard()
++            .unwrap()
++            .with_xkb_state(self, |ctx| ctx.xkb().lock().unwrap().active_layout());
++
+         let Some(Some(bind)) = self.niri.seat.get_keyboard().unwrap().input(
+             self,
+             event.key_code(),
+@@ -557,6 +568,16 @@
+             return;
+         }
+ 
++        // Undo a layout switch done by the key that triggered this bind (see layout_before).
++        // Restored before handle_bind() so that a switch-layout action still applies.
++        let keyboard = self.niri.seat.get_keyboard().unwrap();
++        keyboard.with_xkb_state(self, |mut ctx| {
++            let switched = ctx.xkb().lock().unwrap().active_layout() != layout_before;
++            if switched {
++                ctx.set_layout(layout_before);
++            }
++        });
++
+         self.handle_bind(bind.clone());
+ 
+         self.start_key_repeat(bind);

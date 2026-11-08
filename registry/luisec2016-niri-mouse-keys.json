@@ -1,0 +1,14 @@
+{
+    "id": "niriMouseKeys",
+    "name": "Niri Mouse Keys",
+    "capabilities": ["daemon", "accessibility"],
+    "category": "utilities",
+    "repo": "https://github.com/LuisEC2016/dms-niri-mousekeys",
+    "author": "Luis Espinosa",
+    "description": "Move the pointer from the keyboard on niri: Super+Ctrl+arrows with acceleration, clicks on key release, Space tap, double tap and hold-to-drag. Native Rust daemon, idle at 0% CPU.",
+    "dependencies": ["cargo"],
+    "compositors": ["niri"],
+    "distro": ["any"],
+    "screenshot": "https://raw.githubusercontent.com/LuisEC2016/dms-niri-mousekeys/main/assets/screenshot.png",
+    "requires_dms": ">=1.6.0"
+}

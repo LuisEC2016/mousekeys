@@ -1,0 +1,152 @@
+{
+  "Niri Mouse Keys only works on niri": {
+    "Niri Mouse Keys only works on niri": "Niri Mouse Keys solo funciona en niri"
+  },
+  "It drives the pointer through niri's zwlr_virtual_pointer_v1 and niri key binds.": {
+    "It drives the pointer through niri's zwlr_virtual_pointer_v1 and niri key binds.": "Mueve el puntero con el zwlr_virtual_pointer_v1 de niri y con atajos de niri."
+  },
+  "niri-mousekeys binary not found": {
+    "niri-mousekeys binary not found": "No se encuentra el binario niri-mousekeys"
+  },
+  "Open Settings → Plugins → Niri Mouse Keys and press Build, or install it at %1.": {
+    "Open Settings → Plugins → Niri Mouse Keys and press Build, or install it at %1.": "Abre Ajustes → Plugins → Niri Mouse Keys y pulsa Compilar, o instálalo en %1."
+  },
+  "niri-mousekeys %1 does not match the plugin (%2)": {
+    "niri-mousekeys %1 does not match the plugin (%2)": "niri-mousekeys %1 no coincide con el plugin (%2)"
+  },
+  "Rebuild it from the plugin settings.": {
+    "Rebuild it from the plugin settings.": "Vuelve a compilarlo desde los ajustes del plugin."
+  },
+  "Mouse keys daemon keeps exiting (code %1)": {
+    "Mouse keys daemon keeps exiting (code %1)": "El daemon de teclas de ratón termina una y otra vez (código %1)"
+  },
+  "Daemon running": {
+    "Daemon running": "Daemon en marcha"
+  },
+  "Binary not found: press Build": {
+    "Binary not found: press Build": "No se encuentra el binario: pulsa Compilar"
+  },
+  "Daemon restarting": {
+    "Daemon restarting": "Reiniciando el daemon"
+  },
+  "Daemon keeps failing: see the diagnostics below": {
+    "Daemon keeps failing: see the diagnostics below": "El daemon sigue fallando: mira el diagnóstico de abajo"
+  },
+  "Daemon stopped": {
+    "Daemon stopped": "Daemon parado"
+  },
+  "Cannot run %1": {
+    "Cannot run %1": "No se puede ejecutar %1"
+  },
+  "Build failed (code %1)": {
+    "Build failed (code %1)": "La compilación falló (código %1)"
+  },
+  "niri-mousekeys installed in ~/.local/bin": {
+    "niri-mousekeys installed in ~/.local/bin": "niri-mousekeys instalado en ~/.local/bin"
+  },
+  "Mouse keys for niri": {
+    "Mouse keys for niri": "Teclas de ratón para niri"
+  },
+  "Super+Ctrl+arrows move the pointer and accelerate while held. Super+Ctrl+Enter clicks when you release the keys, Super+Ctrl+Space taps right-click, double taps left-click and holds to drag. Changes apply instantly.": {
+    "Super+Ctrl+arrows move the pointer and accelerate while held. Super+Ctrl+Enter clicks when you release the keys, Super+Ctrl+Space taps right-click, double taps left-click and holds to drag. Changes apply instantly.": "Super+Ctrl+flechas mueven el puntero y aceleran mientras las mantienes. Super+Ctrl+Enter hace clic al soltar las teclas; Super+Ctrl+Espacio: un toque es clic derecho, doble toque clic izquierdo y mantener arrastra. Los cambios se aplican al momento."
+  },
+  "Run diagnostics": {
+    "Run diagnostics": "Diagnóstico"
+  },
+  "Restart daemon": {
+    "Restart daemon": "Reiniciar daemon"
+  },
+  "Building…": {
+    "Building…": "Compilando…"
+  },
+  "Build and install": {
+    "Build and install": "Compilar e instalar"
+  },
+  "Binary path": {
+    "Binary path": "Ruta del binario"
+  },
+  "Empty uses ~/.local/bin/niri-mousekeys, where Build installs it (needs Rust/cargo). Your niri binds must point to the same file.": {
+    "Empty uses ~/.local/bin/niri-mousekeys, where Build installs it (needs Rust/cargo). Your niri binds must point to the same file.": "Vacío usa ~/.local/bin/niri-mousekeys, donde lo instala Compilar (necesita Rust/cargo). Los binds de niri deben apuntar al mismo archivo."
+  },
+  "niri binds": {
+    "niri binds": "Binds de niri"
+  },
+  "Paste them inside binds { } in ~/.config/niri/config.kdl after commenting out niri's default Mod+Ctrl+arrows and Mod+Shift+Ctrl+Left/Right. The binary is spawned directly, without a shell.": {
+    "Paste them inside binds { } in ~/.config/niri/config.kdl after commenting out niri's default Mod+Ctrl+arrows and Mod+Shift+Ctrl+Left/Right. The binary is spawned directly, without a shell.": "Pégalos dentro de binds { } en ~/.config/niri/config.kdl después de comentar los Mod+Ctrl+flechas y Mod+Shift+Ctrl+Left/Right por defecto de niri. El binario se lanza directamente, sin shell."
+  },
+  "Copy binds": {
+    "Copy binds": "Copiar binds"
+  },
+  "Binds copied to the clipboard": {
+    "Binds copied to the clipboard": "Binds copiados al portapapeles"
+  },
+  "Movement": {
+    "Movement": "Movimiento"
+  },
+  "Start speed": {
+    "Start speed": "Velocidad inicial"
+  },
+  "Speed while you start holding an arrow. Lower is more precise.": {
+    "Speed while you start holding an arrow. Lower is more precise.": "Velocidad al empezar a mantener una flecha. Más baja, más precisa."
+  },
+  "Top speed": {
+    "Top speed": "Velocidad máxima"
+  },
+  "Raise it to cross several monitors faster.": {
+    "Raise it to cross several monitors faster.": "Súbela para cruzar varios monitores más rápido."
+  },
+  "Acceleration delay": {
+    "Acceleration delay": "Retardo de aceleración"
+  },
+  "Time at start speed before accelerating.": {
+    "Time at start speed before accelerating.": "Tiempo a velocidad inicial antes de acelerar."
+  },
+  "Acceleration time": {
+    "Acceleration time": "Tiempo de aceleración"
+  },
+  "Time to go from start to top speed (quadratic curve).": {
+    "Time to go from start to top speed (quadratic curve).": "Tiempo para pasar de la velocidad inicial a la máxima (curva cuadrática)."
+  },
+  "Minimum step": {
+    "Minimum step": "Paso mínimo"
+  },
+  "Pixels moved by a very short tap.": {
+    "Pixels moved by a very short tap.": "Píxeles que mueve un toque muy corto."
+  },
+  "Clicks and Space": {
+    "Clicks and Space": "Clics y Espacio"
+  },
+  "Hold to drag": {
+    "Hold to drag": "Mantener para arrastrar"
+  },
+  "How long Space must be held before the left button goes down. Raise it if slow taps start drags.": {
+    "How long Space must be held before the left button goes down. Raise it if slow taps start drags.": "Tiempo con Espacio pulsado antes de bajar el botón izquierdo. Súbelo si arrastras sin querer al hacer un toque lento."
+  },
+  "Double tap window": {
+    "Double tap window": "Ventana de doble toque"
+  },
+  "Maximum gap between two Space taps. It is also the delay of the single-tap right click.": {
+    "Maximum gap between two Space taps. It is also the delay of the single-tap right click.": "Separación máxima entre dos toques de Espacio. Es también lo que tarda el clic derecho de un toque."
+  },
+  "Click timeout": {
+    "Click timeout": "Límite de espera del clic"
+  },
+  "A queued click is dropped if keys are still held after this long.": {
+    "A queued click is dropped if keys are still held after this long.": "Un clic en espera se cancela si tras este tiempo sigue habiendo teclas pulsadas."
+  },
+  "Fallbacks": {
+    "Fallbacks": "Alternativas"
+  },
+  "Step without /dev/input access": {
+    "Step without /dev/input access": "Paso sin acceso a /dev/input"
+  },
+  "Fixed step per key press when the keyboards cannot be read (user not in the input group).": {
+    "Fixed step per key press when the keyboards cannot be read (user not in the input group).": "Paso fijo por pulsación cuando no se pueden leer los teclados (usuario fuera del grupo input)."
+  },
+  "Monitor jump without niri IPC": {
+    "Monitor jump without niri IPC": "Salto de monitor sin IPC de niri"
+  },
+  "Distance of Super+Ctrl+Shift+Left/Right when niri does not report the focused output width.": {
+    "Distance of Super+Ctrl+Shift+Left/Right when niri does not report the focused output width.": "Distancia de Super+Ctrl+Shift+←/→ cuando niri no informa del ancho del monitor enfocado."
+  }
+}

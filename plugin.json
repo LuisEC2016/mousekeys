@@ -1,0 +1,20 @@
+{
+    "$schema": "https://github.com/duxlabs-dev/dux-shell/raw/refs/heads/master/quickshell/PLUGINS/plugin-schema.json",
+    "id": "niriMouseKeys",
+    "name": "Niri Mouse Keys",
+    "description": "Move the pointer from the keyboard on niri: Super+Ctrl+arrows with acceleration, clicks on key release, Space tap, double tap and hold-to-drag. Native Rust daemon over zwlr_virtual_pointer_v1, idle at 0% CPU.",
+    "version": "0.1.0",
+    "author": "Luis Espinosa",
+    "icon": "mouse",
+    "type": "daemon",
+    "component": "./qml/MouseKeysDaemon.qml",
+    "settings": "./qml/MouseKeysSettingsPage.qml",
+    "startupCheck": "./qml/StartupCheck.qml",
+    "capabilities": ["daemon", "accessibility"],
+    "category": "utilities",
+    "compositors": ["niri"],
+    "distro": ["any"],
+    "dependencies": ["cargo"],
+    "requires_dms": ">=1.6.0",
+    "permissions": ["process", "settings_read", "settings_write"]
+}

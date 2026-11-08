@@ -1,6 +1,24 @@
 [package]
-name = "mousekeys"
+name = "niri-mousekeys"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
+description = "Move the pointer from the keyboard on niri (zwlr_virtual_pointer_v1 + evdev)"
+publish = false
+
+[[bin]]
+name = "niri-mousekeys"
+path = "src/main.rs"
 
 [dependencies]
+libc = "0.2"
+
+[profile.release]
+# 3 and not "s": "s" saves 44 KB (492 -> 448 KB) but the key poll on every tick
+# goes from 1.03 to 1.13 us with 7 keyboards (measured 2026-11-08, kernel 7.0).
+# No panic = "abort": unwinding runs Drop for Daemon, which releases the button
+# of a drag; with abort a panic would leave it held down in niri.
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

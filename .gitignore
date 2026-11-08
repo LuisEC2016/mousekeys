@@ -1,1 +1,25 @@
-/target
+# Rust: local build artifacts (the plugin builds in ~/.cache/niri-mousekeys)
+/target/
+**/*.rs.bk
+
+# IDE: RustRover/JetBrains regenerates .idea from Cargo.toml; VS Code
+/.idea/
+*.iml
+/.vscode/
+
+# Qt/QML: compilation caches and language server config
+*.qmlc
+*.jsc
+.qmlls.ini
+
+# Leftovers from applying or regenerating patches/
+*.orig
+*.rej
+
+# Editors and OS
+*~
+*.swp
+.DS_Store
+
+# Profiling
+perf.data*
