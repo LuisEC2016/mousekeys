@@ -12,11 +12,25 @@ use std::os::unix::net::{SocketAddr, UnixDatagram};
 
 pub const MAX_MSG: usize = 512;
 
+/// Longest abstract name: sun_path (108 bytes) minus the leading NUL.
+const MAX_NAME: usize = 107;
+
 pub fn address() -> io::Result<SocketAddr> {
     let display = std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "wayland-0".into());
     // SAFETY: getuid cannot fail.
     let uid = unsafe { libc::getuid() };
-    SocketAddr::from_abstract_name(format!("niri-mousekeys-rs-{uid}-{display}"))
+    SocketAddr::from_abstract_name(name(uid, &display))
+}
+
+/// The display name as is (readable in `ss -x`), or its FNV-1a hash when an
+/// absolute WAYLAND_DISPLAY would not fit in the abstract namespace.
+fn name(uid: u32, display: &str) -> String {
+    let plain = format!("niri-mousekeys-rs-{uid}-{display}");
+    if plain.len() <= MAX_NAME {
+        return plain;
+    }
+    let hash = display.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3));
+    format!("niri-mousekeys-rs-{uid}-h{hash:016x}")
 }
 
 pub fn enable_passcred(sock: &UnixDatagram) -> io::Result<()> {
@@ -75,5 +89,21 @@ pub fn recv(sock: &UnixDatagram, buf: &mut [u8]) -> io::Result<Recv> {
             return Ok(Recv::Rejected);
         }
         Ok(Recv::Msg(n as usize))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn long_displays_are_hashed_to_fit() {
+        assert_eq!(name(1000, "wayland-1"), "niri-mousekeys-rs-1000-wayland-1");
+        let long = format!("/run/user/1000/{}", "d".repeat(90));
+        let n = name(1000, &long);
+        assert!(n.len() <= MAX_NAME && n.starts_with("niri-mousekeys-rs-1000-h"), "{n}");
+        assert_eq!(n, name(1000, &long));
+        assert_ne!(n, name(1000, &format!("{long}x")));
+        assert!(SocketAddr::from_abstract_name(n).is_ok());
     }
 }

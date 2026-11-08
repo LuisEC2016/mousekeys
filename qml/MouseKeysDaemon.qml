@@ -19,6 +19,7 @@ PluginComponent {
     property int failures: 0
     property real startedAt: 0
     property string lastLine: ""
+    property string sentConfig: ""
 
     function setState(state) {
         PluginService.setGlobalVar(pluginId, "daemonState", state);
@@ -44,9 +45,21 @@ PluginComponent {
     }
 
     function start() {
+        const pairs = Defaults.configPairs(pluginData);
         runningBinary = binary;
-        daemon.command = [binary, "daemon", "--supervised"].concat(Defaults.configPairs(pluginData));
+        sentConfig = pairs.join(" ");
+        daemon.command = [binary, "daemon", "--supervised"].concat(pairs);
         daemon.running = true;
+    }
+
+    // A slider emits a change per step and DMS saves each one: send only the
+    // settled value, and only if it differs from what the daemon already has.
+    function sendConfig() {
+        const line = Defaults.configPairs(pluginData).join(" ");
+        if (!daemon.running || line === sentConfig)
+            return;
+        sentConfig = line;
+        daemon.write("config " + line + "\n");
     }
 
     function restart() {
@@ -101,6 +114,13 @@ PluginComponent {
         onTriggered: root.start()
     }
 
+    Timer {
+        id: configTimer
+        interval: 150
+        repeat: false
+        onTriggered: root.sendConfig()
+    }
+
     onPluginDataChanged: {
         if (stopping || pendingStart)
             return;
@@ -108,7 +128,7 @@ PluginComponent {
             if (binary !== runningBinary)
                 restart();
             else
-                daemon.write("config " + Defaults.configPairs(pluginData).join(" ") + "\n");
+                configTimer.restart();
             return;
         }
         // No daemon (binary missing or failing): a new path deserves another try.
@@ -133,6 +153,7 @@ PluginComponent {
     Component.onDestruction: {
         stopping = true;
         restartTimer.stop();
+        configTimer.stop();
         daemon.running = false;
         setState("stopped");
     }

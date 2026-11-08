@@ -148,5 +148,11 @@
   },
   "Distance of Super+Ctrl+Shift+Left/Right when niri does not report the focused output width.": {
     "Distance of Super+Ctrl+Shift+Left/Right when niri does not report the focused output width.": "Distancia de Super+Ctrl+Shift+←/→ cuando niri no informa del ancho del monitor enfocado."
+  },
+  "Drag after releasing Super and Ctrl": {
+    "Drag after releasing Super and Ctrl": "Arrastrar al soltar Super y Ctrl"
+  },
+  "Hold Super+Ctrl+Space, release Super and Ctrl and keep Space down: the button goes down then. Needed on stock niri, which takes Super + left button as \"move window\". Turn it off only with niri patch 0004.": {
+    "Hold Super+Ctrl+Space, release Super and Ctrl and keep Space down: the button goes down then. Needed on stock niri, which takes Super + left button as \"move window\". Turn it off only with niri patch 0004.": "Mantén Super+Ctrl+Espacio, suelta Super y Ctrl y sigue con Espacio pulsado: entonces baja el botón. Necesario en niri sin parchear, que toma Super + botón izquierdo como «mover ventana». Desactívalo solo con el parche 0004 de niri."
   }
 }

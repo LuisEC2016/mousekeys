@@ -32,6 +32,10 @@ pub struct Config {
     pub hold_t: f64,
     /// Maximum s between releasing the first tap and pressing the second.
     pub double_t: f64,
+    /// Non-zero: the drag button waits until no modifier is held. Stock niri
+    /// takes Mod+left button as "move window" (patch 0004 lifts that for
+    /// virtual pointers), so pressing it with Super held would move the window.
+    pub drag_wait_mods: f64,
 }
 
 impl Default for Config {
@@ -49,12 +53,13 @@ impl Default for Config {
             jump_fallback: 1920.0,
             hold_t: 0.30,
             double_t: 0.30,
+            drag_wait_mods: 1.0,
         }
     }
 }
 
 /// Key, factor from the wire unit to the internal one, and minimum accepted (in wire units).
-const KEYS: [(&str, f64, f64); 12] = [
+const KEYS: [(&str, f64, f64); 13] = [
     ("tickMs", 1e-3, 1.0),
     ("vMin", 1.0, 0.0),
     ("vMax", 1.0, 0.0),
@@ -67,9 +72,28 @@ const KEYS: [(&str, f64, f64); 12] = [
     ("jumpFallback", 1.0, 0.0),
     ("holdMs", 1e-3, 0.0),
     ("doubleMs", 1e-3, 0.0),
+    ("dragWaitMods", 1.0, 0.0),
 ];
 
 impl Config {
+    fn value(&self, i: usize) -> f64 {
+        [
+            self.tick,
+            self.v_min,
+            self.v_max,
+            self.t_delay,
+            self.t_ramp,
+            self.min_step,
+            self.fallback_step,
+            self.click_timeout,
+            self.click_gap,
+            self.jump_fallback,
+            self.hold_t,
+            self.double_t,
+            self.drag_wait_mods,
+        ][i]
+    }
+
     fn slot(&mut self, i: usize) -> &mut f64 {
         match i {
             0 => &mut self.tick,
@@ -83,7 +107,8 @@ impl Config {
             8 => &mut self.click_gap,
             9 => &mut self.jump_fallback,
             10 => &mut self.hold_t,
-            _ => &mut self.double_t,
+            11 => &mut self.double_t,
+            _ => &mut self.drag_wait_mods,
         }
     }
 
@@ -126,10 +151,25 @@ impl Config {
     }
 
     pub fn summary(&self) -> String {
-        let mut c = self.clone();
+        self.describe(|_| true)
+    }
+
+    /// Only the keys that differ from `old`, or `None` if nothing changed.
+    /// The plugin resends every key on each change, so logging all of them
+    /// would put a full line in the DMS log for each slider step.
+    pub fn changes(&self, old: &Config) -> Option<String> {
+        let changed = |i: usize| self.value(i) != old.value(i);
+        (0..KEYS.len()).any(changed).then(|| self.describe(changed))
+    }
+
+    pub fn drag_waits_for_mods(&self) -> bool {
+        self.drag_wait_mods != 0.0
+    }
+
+    fn describe(&self, include: impl Fn(usize) -> bool) -> String {
         let mut out = tr!("settings:", "ajustes:");
-        for (i, (name, scale, _)) in KEYS.iter().enumerate() {
-            let v = *c.slot(i) / scale;
+        for (i, (name, scale, _)) in KEYS.iter().enumerate().filter(|(i, _)| include(*i)) {
+            let v = self.value(i) / scale;
             let _ = write!(out, " {name}={}", (v * 1000.0).round() / 1000.0);
         }
         out
@@ -192,5 +232,18 @@ mod tests {
         assert!(s.contains("tickMs=8 "), "{s}");
         assert!(s.contains("holdMs=300 "), "{s}");
         assert!(s.contains("vMax=1800 "), "{s}");
+        assert!(s.ends_with(" dragWaitMods=1"), "{s}");
+    }
+
+    #[test]
+    fn changes_lists_only_what_moved() {
+        let old = Config::default();
+        let mut c = old.clone();
+        assert!(c.apply(["vMax=1800", "holdMs=300"]).is_empty());
+        assert_eq!(c.changes(&old), None);
+        assert!(c.apply(["vMax=2600", "holdMs=300", "dragWaitMods=0"]).is_empty());
+        let s = c.changes(&old).unwrap();
+        assert!(s.ends_with(" vMax=2600 dragWaitMods=0"), "{s}");
+        assert!(!c.drag_waits_for_mods() && old.drag_waits_for_mods());
     }
 }

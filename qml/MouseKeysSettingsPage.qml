@@ -313,6 +313,13 @@ PluginSettings {
         unit: "ms"
     }
 
+    ToggleSetting {
+        settingKey: "dragWaitMods"
+        label: I18n.trFor("niriMouseKeys", "Drag after releasing Super and Ctrl")
+        description: I18n.trFor("niriMouseKeys", "Hold Super+Ctrl+Space, release Super and Ctrl and keep Space down: the button goes down then. Needed on stock niri, which takes Super + left button as \"move window\". Turn it off only with niri patch 0004.")
+        defaultValue: Defaults.tunables.dragWaitMods
+    }
+
     SliderSetting {
         settingKey: "doubleMs"
         label: I18n.trFor("niriMouseKeys", "Double tap window")

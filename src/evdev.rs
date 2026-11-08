@@ -8,12 +8,17 @@
 //! grace period (evdev_detach_client → synchronize_rcu): about 9 ms measured,
 //! up to 33 ms. That is why non-keyboards are skipped by reading sysfs,
 //! without opening them, and keyboards are closed on a separate thread.
+//!
+//! The daemon keeps the list of candidate paths (not the descriptors) between
+//! gestures and rescans only when /dev/input changes: without it every gesture
+//! read the sysfs capabilities of all nodes (24 open/read/close on this machine).
 
 use std::fs::{self, File, OpenOptions};
 use std::io::Read as _;
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::PathBuf;
+use std::time::SystemTime;
 
 pub const KEY_SPACE: u16 = 57;
 pub const KEY_UP: u16 = 103;
@@ -21,6 +26,8 @@ pub const KEY_LEFT: u16 = 105;
 pub const KEY_RIGHT: u16 = 106;
 pub const KEY_DOWN: u16 = 108;
 pub const ARROWS: [u16; 4] = [KEY_UP, KEY_LEFT, KEY_RIGHT, KEY_DOWN];
+/// Ctrl, Shift, Alt and Super, left and right.
+pub const MODIFIERS: [u16; 8] = [29, 97, 42, 54, 56, 100, 125, 126];
 
 const KEY_MAX: usize = 0x2ff;
 const KEY_NBYTES: usize = KEY_MAX / 8 + 1;
@@ -50,6 +57,10 @@ impl KeyState {
 
     pub fn any(&self) -> bool {
         self.0.iter().any(|&w| w != 0)
+    }
+
+    pub fn any_of(&self, codes: &[u16]) -> bool {
+        codes.iter().any(|&c| self.is_down(c))
     }
 
     pub fn codes(&self) -> Vec<u16> {
@@ -115,39 +126,73 @@ impl Keyboard {
     }
 }
 
+/// /dev/input/event* nodes whose sysfs capabilities do not rule out the four
+/// arrows, in event order.
+fn scan() -> Vec<PathBuf> {
+    let Ok(dir) = fs::read_dir("/dev/input") else {
+        return Vec::new();
+    };
+    let mut paths: Vec<(u32, PathBuf)> = dir
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let n = e.file_name().to_str()?.strip_prefix("event")?.parse().ok()?;
+            Some((n, e.path()))
+        })
+        .filter(|(n, _)| sysfs_arrows(*n) != Some(false))
+        .collect();
+    paths.sort_unstable_by_key(|(n, _)| *n);
+    paths.into_iter().map(|(_, p)| p).collect()
+}
+
+/// Candidate paths kept between gestures. Adding or removing a node changes
+/// the mtime of /dev/input (devtmpfs, nanoseconds), which triggers a rescan; a
+/// reused event number therefore also rescans, and the `EVIOCGBIT` check on
+/// open still guards against a device that is not a keyboard.
+#[derive(Default)]
+pub struct Candidates {
+    stamp: Option<SystemTime>,
+    paths: Vec<PathBuf>,
+}
+
+impl Candidates {
+    fn refresh(&mut self) -> &[PathBuf] {
+        let stamp = fs::metadata("/dev/input").and_then(|m| m.modified()).ok();
+        if stamp.is_none() || stamp != self.stamp {
+            self.paths = scan();
+            self.stamp = stamp;
+        }
+        &self.paths
+    }
+}
+
 /// Every readable device that has the four arrows.
 #[derive(Default)]
 pub struct Keyboards(Vec<Keyboard>);
 
 impl Keyboards {
+    /// Fresh scan, for diagnostics.
     pub fn open() -> Self {
-        let Ok(dir) = fs::read_dir("/dev/input") else {
-            return Self::default();
-        };
-        let mut paths: Vec<(u32, PathBuf)> = dir
-            .filter_map(|e| e.ok())
-            .filter_map(|e| {
-                let n = e.file_name().to_str()?.strip_prefix("event")?.parse().ok()?;
-                Some((n, e.path()))
-            })
-            .collect();
-        paths.sort_unstable_by_key(|(n, _)| *n);
+        Self::open_paths(&scan())
+    }
 
+    /// Opens the cached candidates (rescanned only if /dev/input changed).
+    pub fn open_cached(cache: &mut Candidates) -> Self {
+        Self::open_paths(cache.refresh())
+    }
+
+    fn open_paths(paths: &[PathBuf]) -> Self {
         let mut kbds = Vec::new();
-        for (n, path) in paths {
-            if sysfs_arrows(n) == Some(false) {
-                continue;
-            }
+        for path in paths {
             let Ok(file) = OpenOptions::new()
                 .read(true)
                 .custom_flags(libc::O_NONBLOCK)
-                .open(&path)
+                .open(path)
             else {
                 continue;
             };
             let mut caps = KeyState::default();
             if ioctl_read(&file, EVIOCGBIT_KEY, &mut caps.0) && ARROWS.iter().all(|&k| caps.is_down(k)) {
-                kbds.push(Keyboard { path, file });
+                kbds.push(Keyboard { path: path.clone(), file });
             }
         }
         Self(kbds)

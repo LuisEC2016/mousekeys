@@ -18,12 +18,18 @@ pub enum WlError {
     Closed,
     Protocol(String),
     Unsupported,
+    /// The compositor did not read or answer within `IO_TIMEOUT`.
+    Timeout,
 }
 
 impl fmt::Display for WlError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             WlError::Io(e) => write!(f, "{e}"),
+            WlError::Timeout => f.write_str(&tr!(
+                "the compositor is not responding (no progress in 2 s)",
+                "el compositor no responde (2 s sin avanzar)"
+            )),
             WlError::Closed => f.write_str(&tr!("the compositor closed the connection", "el compositor cerró la conexión")),
             WlError::Protocol(m) => f.write_str(&tr!("protocol error: {m}", "error de protocolo: {m}")),
             WlError::Unsupported => f.write_str(&tr!("the compositor does not expose {IFACE}", "el compositor no expone {IFACE}")),
@@ -32,8 +38,13 @@ impl fmt::Display for WlError {
 }
 
 impl From<io::Error> for WlError {
+    /// The socket has SO_RCVTIMEO/SO_SNDTIMEO: an expired timeout comes back as
+    /// EAGAIN ("Resource temporarily unavailable"), which says nothing useful.
     fn from(e: io::Error) -> Self {
-        WlError::Io(e)
+        match e.kind() {
+            io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut => WlError::Timeout,
+            _ => WlError::Io(e),
+        }
     }
 }
 

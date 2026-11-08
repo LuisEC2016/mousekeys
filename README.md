@@ -17,18 +17,18 @@ English is the default. Spanish is also included:
 |---|---|
 | `Super+Ctrl+←/→/↑/↓` (hold) | Moves the pointer. Starts slow (fine positioning) and accelerates while you hold the key. |
 | `Super+Ctrl+` two arrows | Diagonal movement. |
-| `Super+Ctrl+Enter` | Left click when you **release** all the keys. Enter twice before releasing = double click. |
+| `Super+Ctrl+Enter` | Left click when you **release** all the keys. Enter twice before releasing = double click (selects a word), three times = triple click (selects a paragraph). More presses are ignored. |
 | `Super+Ctrl+Shift+Enter` | Right click, also on release. |
 | `Super+Ctrl+Shift+←/→` | The pointer jumps to the adjacent monitor and lands on the same relative spot. |
 | `Super+Ctrl+Space` (one tap) | **Right** click, 0.3 s after releasing Space (it waits for a possible second tap). |
 | `Super+Ctrl+Space` (double tap) | **Left** click, when everything is released. |
-| `Super+Ctrl+Space` (hold) | **Drag**: after 0.3 s the left button goes down; move with the arrows without releasing Space; releasing Space drops the object. Needs patches [0004 and 0005](#niri-patches). |
+| `Super+Ctrl+Space` (hold) | **Drag**: release Super and Ctrl and keep Space down; after 0.3 s the left button goes down. Move with `Super+Ctrl+`arrows without releasing Space; releasing Space drops the object. Works on stock niri. |
 
 A short tap moves 2–5 px. Holding the key covers about 70 px in 0.5 s, about 540 px in 1 s, and crosses a 1920 px monitor in about 1.8 s (checked by the `default_curve_matches_the_readme` test).
 
 **Why the click waits for you to release:** while Super is held, niri reserves the left click for moving windows and the right click for resizing them. The click is queued and goes out once no key is held; if keys are still held after 3 s, it is dropped.
 
-**The Space drag cannot wait:** the button goes down with Super and Ctrl held. Without patch 0004, niri takes it as "move window". The application sees Ctrl during the drag: in a file manager, dropping with Ctrl copies. To move, release Super and Ctrl and leave Space for last.
+**Why the drag waits for Super and Ctrl:** stock niri takes Super + left button as "move window", so a button pressed with Super held never reaches the application. With `dragWaitMods` on (the default), the button goes down only once Space has been held for `holdMs` **and** no modifier is held; Space alone keeps the drag going, and `Super+Ctrl+`arrows move it. If you release Space before Super and Ctrl, the drag does not start and nothing is clicked (the log says so). Release Super and Ctrl before Space at the end too: an application that sees Ctrl on drop copies instead of moving (file managers). With [patch 0004](#niri-patches) you can turn `dragWaitMods` off and the button goes down after 0.3 s even with Super and Ctrl held.
 
 ## How it works
 
@@ -42,7 +42,7 @@ niri (bind Super+Ctrl+←, repeat=false)
                                    zwlr_virtual_pointer_v1.motion ──▶ niri moves the cursor
 ```
 
-- **Client:** each shortcut launches `niri-mousekeys` directly (no `sh -c`), which sends a datagram to an abstract socket (`\0niri-mousekeys-rs-<uid>-<WAYLAND_DISPLAY>`) and exits.
+- **Client:** each shortcut launches `niri-mousekeys` directly (no `sh -c`), which sends a datagram to an abstract socket (`\0niri-mousekeys-rs-<uid>-<WAYLAND_DISPLAY>`, with a hash of the display instead when an absolute `WAYLAND_DISPLAY` would make the name longer than 107 bytes) and exits.
 - **Daemon:** the plugin starts it (`daemon --supervised` with the settings as arguments) and restarts it with growing backoff if it fails. Changes on the settings page reach it over stdin instantly, without restarting it or writing files.
 - **Guardian:** Quickshell kills the processes of a `Process` that is destroyed (disabling the plugin, reloading DMS) with SIGKILL, and with SIGKILL there is no way to release a button. That is why `--supervised` splits in two: a minimal guardian, which is the direct child of DMS, and the real daemon in its own session, joined by a pipe. When the guardian dies, even by SIGKILL, the daemon sees the pipe closed, releases the button and exits. The guardian returns the daemon's exit code, so DMS still sees its failures.
 - **Without DMS:** if the daemon is not running (DMS stopped or plugin disabled), the first shortcut starts one with the default values. When the plugin starts, it takes over: the previous daemon releases the button if it held one and exits.
@@ -61,7 +61,9 @@ On this machine (niri 26.04, DMS 1.6.0), idle and with both running at the same 
 | PSS (real own memory) | 7,716 kB | 246 + 278 = 524 kB |
 | `Private_Dirty` | 6,852 kB | 44 + 48 = 92 kB |
 | Idle CPU (5 s) | — | 0 ticks |
-| Binary | interpreter + script | 506 kB, no dependencies besides libc |
+| Binary | interpreter + script | 511 kB, no dependencies besides libc |
+
+Per gesture (100 `move` with the daemon running, `strace -c`; 1,500 for CPU): about 45 system calls and 0.29 ms of CPU. The paths of the candidate keyboards are kept between gestures and rescanned only when `/dev/input` changes (its mtime), so a gesture opens only the keyboards instead of reading the sysfs capabilities of every input node; the descriptors are still opened and closed per gesture. After the first few hundred gestures the daemon's RSS settles about 300 kB higher (glibc keeps the stacks of the threads that close the keyboards) and stays there.
 
 Measured with `ps -o rss` and `/proc/<pid>/smaps_rollup`; the binary size is from the release build of 2026-11-08 with both languages. Each key press launches a process that takes under 10 ms with the daemon running (`/usr/bin/time` reports 0.00 s) and about 20 ms the first time, when it also starts the daemon.
 
@@ -99,11 +101,11 @@ Or by hand: clone this repository into `~/.config/DankMaterialShell/plugins/niri
 In the plugin settings, press **Build and install**. It is equivalent to:
 
 ```sh
-cargo install --locked --path ~/.config/DankMaterialShell/plugins/niriMouseKeys \
+cargo install --force --locked --path ~/.config/DankMaterialShell/plugins/niriMouseKeys \
     --root ~/.local --target-dir "${XDG_CACHE_HOME:-$HOME/.cache}/niri-mousekeys"
 ```
 
-It leaves the binary in `~/.local/bin/niri-mousekeys` and the build artifacts in the cache, outside the plugin folder. After updating the plugin, press the button again: the daemon warns if the binary version does not match the plugin version.
+It leaves the binary in `~/.local/bin/niri-mousekeys` and the build artifacts in the cache, outside the plugin folder. After updating the plugin, press the button again: the daemon warns if the binary version does not match the plugin version. `--force` replaces whatever is already at that path (a copy made by hand, a symlink to a development build); without it cargo refuses with `binary niri-mousekeys already exists in destination`.
 
 ### 4. niri binds
 
@@ -150,7 +152,7 @@ Acceptance test with the physical keyboard:
 4. With two monitors, `Super+Ctrl+Shift+→` and then `←`.
 5. One tap of `Super+Ctrl+Space` and release: context menu after 0.3 s.
 6. Double tap of `Super+Ctrl+Space` over a link: left click.
-7. With patches 0004 and 0005: hold `Super+Ctrl+Space` over a file, move it with the arrows, release Super+Ctrl and then Space. The file moves, not the window, and the keyboard layout does not change.
+7. Over a file: `Super+Ctrl+Space`, release Super and Ctrl keeping Space down, move it with `Super+Ctrl+`arrows, release Super and Ctrl and then Space. The file moves, not the window. (With `grp:win_space_toggle`, the keyboard layout only stays put with patch 0005.)
 
 ## Migrating from the Python script
 
@@ -172,6 +174,7 @@ All of them are changed on the plugin page and apply instantly. From the command
 | `rampMs` | 800 ms | Time from `vMin` to `vMax` (quadratic curve). |
 | `minStep` | 2 px | Guaranteed step for each tap. |
 | `holdMs` | 300 ms | Time Space must be held to start dragging. |
+| `dragWaitMods` | on (`1`) | The drag button waits until Super, Ctrl, Alt and Shift are released. Turn it off (`0`) only with patch 0004. |
 | `doubleMs` | 300 ms | Maximum gap between two Space taps; also the delay of the single-tap right click. |
 | `clickTimeoutMs` | 3000 ms | Maximum wait for you to release the keys before the click is dropped. |
 | `fallbackStep` | 40 px | Step per key press in degraded mode. |
@@ -198,7 +201,7 @@ Three small patches on top of niri v26.04, all in `src/input/mod.rs`, in [`patch
 | Patch | Needed if... | Without it |
 |---|---|---|
 | `0003-hide-when-typing-only-typing` | you use `cursor { hide-when-typing }` | the cursor blinks when it starts moving |
-| `0004-virtual-pointer-no-mod-gestures` | you want to drag with Space | holding Space moves the window instead of dragging the object |
+| `0004-virtual-pointer-no-mod-gestures` | you want the drag to start without releasing Super and Ctrl (`dragWaitMods=0`) | with `dragWaitMods=0`, holding Space moves the window instead of dragging the object |
 | `0005-bind-keys-keep-layout` | you use `grp:win_space_toggle` or another XKB option that turns Super+Space into a layout switch | every `Super+Ctrl+Space` switches the keyboard layout |
 
 - **0003:** niri hides the cursor on any key, Super or Ctrl included, before checking whether it triggers a bind. The patch only hides it for non-modifier keys that reach the application. Without the patch, the daemon emits a null motion with every command and the cursor reappears as soon as you press the arrow.
@@ -230,7 +233,8 @@ sudo install -m755 target/release/niri "$(command -v niri)"
 | "binary not found" warning when enabling the plugin | Not built yet | **Build and install** button, or the `cargo install` above. |
 | The cursor blinks when it starts moving | `hide-when-typing` | Remove the option or apply patch 0003. |
 | Every `Super+Ctrl+Space` switches the layout | `grp:win_space_toggle` without patch 0005 | Patch 0005 or change the layout shortcut. `niri msg action switch-layout prev` switches back. |
-| Holding Space moves the window | niri without patch 0004 | Patch 0004; check that the installed binary is the patched one. |
+| Holding Space moves the window | `dragWaitMods=0` on niri without patch 0004 | Turn `dragWaitMods` back on, or install patch 0004 and check that the running binary is the patched one. |
+| Holding Space does nothing | Super and Ctrl are still held (`dragWaitMods`) | Release Super and Ctrl while keeping Space down. Log: `drag not started: release Super and Ctrl before Space`. |
 | Dragging a file copies it | The app sees Ctrl on drop | Release Super and Ctrl before Space. |
 | The left button stays stuck | The daemon died from `kill -9` in the middle of a drag | A click with the mouse or touchpad, or a short drag with `Super+Ctrl+Space`. |
 

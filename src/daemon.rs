@@ -11,7 +11,7 @@ use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 use crate::config::Config;
-use crate::evdev::{KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_SPACE, KEY_UP, Keyboards};
+use crate::evdev::{Candidates, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_SPACE, KEY_UP, Keyboards, MODIFIERS};
 use crate::ipc::{self, Recv};
 use crate::niri;
 use crate::wayland::{VirtualPointer, WlError};
@@ -43,6 +43,20 @@ fn number(s: &str) -> Option<f64> {
     s.parse::<f64>().ok().filter(|v| v.is_finite())
 }
 
+/// At most `MAX_LOGGED` characters of `s`, for log lines quoting input.
+fn clip(s: &str) -> String {
+    const MAX_LOGGED: usize = 80;
+    match s.char_indices().nth(MAX_LOGGED) {
+        Some((end, _)) => format!("{}…", &s[..end]),
+        None => s.to_owned(),
+    }
+}
+
+/// Enter pressed up to three times before releasing: single, double or
+/// triple click (word, paragraph). More presses are ignored instead of
+/// queueing an unbounded burst.
+const MAX_CLICKS: usize = 3;
+
 #[derive(Debug, PartialEq)]
 pub enum Cmd<'a> {
     Move((f64, f64)),
@@ -61,7 +75,7 @@ pub fn parse(line: &str) -> Result<Option<Cmd<'_>>, String> {
         return Ok(None);
     };
     let args: Vec<&str> = words.collect();
-    let line = line.trim();
+    let line = clip(line.trim());
     let bad = || tr!("unknown command: {line:?}", "orden desconocida: {line:?}");
     let cmd = match (cmd, args.as_slice()) {
         ("move", [d]) => Cmd::Move(direction(d).ok_or_else(bad)?),
@@ -107,9 +121,14 @@ pub struct Daemon {
     cfg: Config,
     epoch: Instant,
     mv: Option<Move>,
+    candidates: Candidates,
     clicks: Vec<u32>,
     click_kbd: Keyboards,
     click_deadline: f64,
+    /// Every key was released: the queued clicks go out one per `click_gap`,
+    /// scheduled through poll instead of sleeping in the loop.
+    click_ready: bool,
+    click_next: f64,
     space: Option<Space>,
     held: Option<u32>,
     warned_no_kbd: bool,
@@ -124,9 +143,12 @@ impl Daemon {
             cfg,
             epoch: Instant::now(),
             mv: None,
+            candidates: Candidates::default(),
             clicks: Vec::new(),
             click_kbd: Keyboards::default(),
             click_deadline: 0.0,
+            click_ready: false,
+            click_next: 0.0,
             space: None,
             held: None,
             warned_no_kbd: false,
@@ -140,7 +162,7 @@ impl Daemon {
     }
 
     fn keyboards(&mut self) -> Keyboards {
-        let kbd = Keyboards::open();
+        let kbd = Keyboards::open_cached(&mut self.candidates);
         if kbd.is_empty() && !self.warned_no_kbd {
             log!(
                 "{}",
@@ -183,10 +205,13 @@ impl Daemon {
                 self.vp.roundtrip()?;
             }
             Cmd::Config(pairs) => {
+                let old = self.cfg.clone();
                 for e in self.cfg.apply(pairs) {
                     log!("{e}");
                 }
-                log!("{}", self.cfg.summary());
+                if let Some(changes) = self.cfg.changes(&old) {
+                    log!("{changes}");
+                }
             }
             Cmd::Quit => self.exit = Some(0),
             Cmd::Ping => {}
@@ -239,7 +264,10 @@ impl Daemon {
     }
 
     fn queue_click(&mut self, code: u32) {
-        if self.clicks.is_empty() {
+        if self.clicks.len() >= MAX_CLICKS {
+            return;
+        }
+        if self.clicks.is_empty() && !self.click_ready {
             self.click_kbd = self.keyboards();
             self.click_deadline = self.now() + self.cfg.click_timeout;
         }
@@ -282,13 +310,30 @@ impl Daemon {
         }
         // If the keyboards can no longer be read, the state comes back empty =
         // released: the drag ends instead of leaving the button down.
-        let down = s.kbd.state().is_down(KEY_SPACE);
+        let state = s.kbd.state();
+        let down = state.is_down(KEY_SPACE);
+        let long = now - s.t0 >= self.cfg.hold_t;
+        // With dragWaitMods the button waits until Super, Ctrl, Alt and Shift
+        // are released (Space still held): on stock niri, Mod + left button is
+        // "move window" and the application would never see the press.
+        let mods_block = self.cfg.drag_waits_for_mods() && state.any_of(&MODIFIERS);
         match s.phase {
+            Phase::Down if !down && long => {
+                // A long press released before the drag could start is not a tap.
+                self.space = None;
+                log!(
+                    "{}",
+                    tr!(
+                        "drag not started: release Super and Ctrl before Space (dragWaitMods)",
+                        "arrastre no iniciado: suelta Super y Ctrl antes que Space (dragWaitMods)"
+                    )
+                );
+            }
             Phase::Down if !down => {
                 s.phase = Phase::Wait;
                 s.t_up = now;
             }
-            Phase::Down if now - s.t0 >= self.cfg.hold_t => {
+            Phase::Down if long && !mods_block => {
                 s.phase = Phase::Drag;
                 self.held = Some(BTN_LEFT);
                 self.vp.button(BTN_LEFT, true)?;
@@ -310,30 +355,38 @@ impl Daemon {
     }
 
     fn step_click(&mut self, now: f64) -> Result<(), WlError> {
-        let state = self.click_kbd.state();
-        if state.any() && now < self.click_deadline {
-            return Ok(());
-        }
-        let clicks = std::mem::take(&mut self.clicks);
-        let _kbd = std::mem::take(&mut self.click_kbd); // closed after the clicks
-        if state.any() {
-            let (timeout, codes) = (self.cfg.click_timeout, state.codes());
-            log!(
-                "{}",
-                tr!(
-                    "click dropped: keys still held after {timeout}s (evdev codes {codes:?})",
-                    "clic cancelado: teclas aún pulsadas tras {timeout}s (códigos evdev {codes:?})"
-                )
-            );
-            return Ok(());
-        }
-        for (i, code) in clicks.into_iter().enumerate() {
-            if i > 0 {
-                sleep(Duration::from_secs_f64(self.cfg.click_gap));
+        let mut kbd = None;
+        if !self.click_ready {
+            let state = self.click_kbd.state();
+            if state.any() && now < self.click_deadline {
+                return Ok(());
             }
+            kbd = Some(std::mem::take(&mut self.click_kbd)); // closed after the first click
+            if state.any() {
+                self.clicks.clear();
+                let (timeout, codes) = (self.cfg.click_timeout, state.codes());
+                log!(
+                    "{}",
+                    tr!(
+                        "click dropped: keys still held after {timeout}s (evdev codes {codes:?})",
+                        "clic cancelado: teclas aún pulsadas tras {timeout}s (códigos evdev {codes:?})"
+                    )
+                );
+                return Ok(());
+            }
+            self.click_ready = true;
+            self.click_next = now;
+        }
+        if now >= self.click_next && !self.clicks.is_empty() {
+            let code = self.clicks.remove(0);
             self.vp.button(code, true)?;
             self.vp.button(code, false)?;
+            self.click_next = now + self.cfg.click_gap;
         }
+        if self.clicks.is_empty() {
+            self.click_ready = false;
+        }
+        drop(kbd);
         Ok(())
     }
 
@@ -397,7 +450,7 @@ impl Daemon {
             next = next.min(m.last + tick);
         }
         if !self.clicks.is_empty() {
-            next = next.min(now + tick);
+            next = next.min(if self.click_ready { self.click_next } else { now + tick });
         }
         if let Some(s) = &self.space {
             next = next.min(if s.phase == Phase::Wait { s.t_up + self.cfg.double_t } else { now + tick });
@@ -698,5 +751,12 @@ mod tests {
         for bad in ["move", "move sideways", "click left right", "jump up", "nudge 1", "nudge nan 0", "space 1", "rm -rf"] {
             assert!(parse(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn long_input_is_clipped_in_the_log() {
+        let e = parse(&"ñ".repeat(3000)).unwrap_err();
+        assert!(e.chars().count() < 130 && e.contains('…'), "{e}");
+        assert_eq!(clip("move left"), "move left");
     }
 }
