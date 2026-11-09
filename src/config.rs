@@ -32,9 +32,12 @@ pub struct Config {
     pub hold_t: f64,
     /// Maximum s between releasing the first tap and pressing the second.
     pub double_t: f64,
-    /// Non-zero: the drag button waits until no modifier is held. Stock niri
-    /// takes Mod+left button as "move window" (patch 0004 lifts that for
-    /// virtual pointers), so pressing it with Super held would move the window.
+    /// Non-zero: over a window, clicks and the drag button wait until no
+    /// modifier is held. Stock niri takes Mod + left/right button there as
+    /// "move/resize window" (patch 0004 lifts that for virtual pointers).
+    /// Zero (only with patch 0004): they go out with the modifiers held, and
+    /// the application sees them. The key keeps its old name so saved
+    /// settings still apply.
     pub drag_wait_mods: f64,
 }
 
@@ -162,7 +165,7 @@ impl Config {
         (0..KEYS.len()).any(changed).then(|| self.describe(changed))
     }
 
-    pub fn drag_waits_for_mods(&self) -> bool {
+    pub fn waits_for_mods(&self) -> bool {
         self.drag_wait_mods != 0.0
     }
 
@@ -244,6 +247,6 @@ mod tests {
         assert!(c.apply(["vMax=2600", "holdMs=300", "dragWaitMods=0"]).is_empty());
         let s = c.changes(&old).unwrap();
         assert!(s.ends_with(" vMax=2600 dragWaitMods=0"), "{s}");
-        assert!(!c.drag_waits_for_mods() && old.drag_waits_for_mods());
+        assert!(!c.waits_for_mods() && old.waits_for_mods());
     }
 }

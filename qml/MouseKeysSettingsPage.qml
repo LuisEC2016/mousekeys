@@ -114,7 +114,7 @@ PluginSettings {
 
     StyledText {
         width: parent.width
-        text: I18n.trFor("niriMouseKeys", "Super+Ctrl+arrows move the pointer and accelerate while held. Super+Ctrl+Enter clicks when you release the keys, Super+Ctrl+Space taps right-click, double taps left-click and holds to drag. Changes apply instantly.")
+        text: I18n.trFor("niriMouseKeys", "Super+Ctrl+arrows move the pointer and accelerate while held. Super+Ctrl+Enter clicks when you release the keys, Super+Ctrl+Space taps left-click, double taps right-click and holds to drag. Changes apply instantly.")
         font.pixelSize: Theme.fontSizeSmall
         color: Theme.surfaceVariantText
         wrapMode: Text.WordWrap
@@ -315,15 +315,15 @@ PluginSettings {
 
     ToggleSetting {
         settingKey: "dragWaitMods"
-        label: I18n.trFor("niriMouseKeys", "Drag after releasing Super and Ctrl")
-        description: I18n.trFor("niriMouseKeys", "Hold Super+Ctrl+Space, release Super and Ctrl and keep Space down: the button goes down then. Needed on stock niri, which takes Super + left button as \"move window\". Turn it off only with niri patch 0004.")
+        label: I18n.trFor("niriMouseKeys", "Wait for Super and Ctrl over windows")
+        description: I18n.trFor("niriMouseKeys", "Over a window, clicks wait until you release Super and Ctrl, and the drag until you release them with Space still down: stock niri takes Super + button there to move or resize the window. Over DMS panels they go out at once. Turn it off only with niri patch 0004: then they go out at once everywhere, and the application sees Super and Ctrl held (Ctrl+click on a link opens a new tab).")
         defaultValue: Defaults.tunables.dragWaitMods
     }
 
     SliderSetting {
         settingKey: "doubleMs"
         label: I18n.trFor("niriMouseKeys", "Double tap window")
-        description: I18n.trFor("niriMouseKeys", "Maximum gap between two Space taps. It is also the delay of the single-tap right click.")
+        description: I18n.trFor("niriMouseKeys", "Maximum gap between two Space taps. It is also the delay of the single-tap left click.")
         defaultValue: Defaults.tunables.doubleMs
         minimum: 100
         maximum: 1000

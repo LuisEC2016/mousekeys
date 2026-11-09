@@ -192,8 +192,8 @@ const BINDS: [(&str, &str, &str, &str); 9] = [
     (
         "Mod+Ctrl+Space",
         "space",
-        "Pointer: Space tap=right, double=left, hold=drag",
-        "Puntero: Espacio toque=der, doble=izq, mantener=arrastrar",
+        "Pointer: Space tap=left, double=right, hold=drag",
+        "Puntero: Espacio toque=izq, doble=der, mantener=arrastrar",
     ),
     ("Mod+Shift+Ctrl+Left", "jump left", "Pointer: jump to left monitor", "Puntero: saltar al monitor izquierdo"),
     ("Mod+Shift+Ctrl+Right", "jump right", "Pointer: jump to right monitor", "Puntero: saltar al monitor derecho"),

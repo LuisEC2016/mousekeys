@@ -1,21 +1,86 @@
-//! Logical width of the focused monitor, over the niri IPC socket
-//! ($NIRI_SOCKET), without spawning `niri msg`.
+//! Requests to the niri IPC socket ($NIRI_SOCKET), without spawning
+//! `niri msg`: the logical width of the focused monitor, and whether there is
+//! a window under the pointer.
 
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
 const TIMEOUT: Duration = Duration::from_secs(1);
 const MAX_REPLY: u64 = 1 << 20;
 
-pub fn focused_output_width() -> Option<f64> {
+fn request(req: &[u8]) -> Option<UnixStream> {
     let mut sock = UnixStream::connect(std::env::var_os("NIRI_SOCKET")?).ok()?;
     sock.set_read_timeout(Some(TIMEOUT)).ok()?;
     sock.set_write_timeout(Some(TIMEOUT)).ok()?;
-    sock.write_all(b"\"FocusedOutput\"\n").ok()?;
+    sock.write_all(req).ok()?;
+    Some(sock)
+}
+
+fn read_reply(reader: &mut impl BufRead, reply: &mut Vec<u8>) -> io::Result<()> {
+    reader.take(MAX_REPLY).read_until(b'\n', reply)?;
+    Ok(())
+}
+
+pub fn focused_output_width() -> Option<f64> {
+    let mut sock = BufReader::new(request(b"\"FocusedOutput\"\n")?);
     let mut reply = Vec::new();
-    BufReader::new(sock.take(MAX_REPLY)).read_until(b'\n', &mut reply).ok()?;
+    read_reply(&mut sock, &mut reply).ok()?;
     logical_width(std::str::from_utf8(&reply).ok()?)
+}
+
+/// `niri msg pick-window` without a person clicking: niri answers with the
+/// window under the pointer when the next button goes down, and swallows that
+/// press and its release. It looks with the same `window_under` that decides
+/// whether Mod + left or right button becomes "move/resize window", so it says
+/// whether such a press would reach the application: over a layer-shell
+/// surface (the DMS bar, control center or notifications) or empty space there
+/// is no window, and niri lets the press through even with Super held.
+pub struct Pick {
+    reader: BufReader<UnixStream>,
+    reply: Vec<u8>,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Picked {
+    Window,
+    Nothing,
+    /// Error reply (a niri without pick-window) or a closed connection.
+    Unknown,
+}
+
+impl Pick {
+    /// Starts the pick. niri sets its grab on an idle callback after reading
+    /// the request; a second request on another connection, answered after
+    /// the first one was read, keeps the probe button from usually arriving
+    /// before the grab. If it still does, `answer` times out and the caller
+    /// sends the button again.
+    pub fn start() -> Option<Pick> {
+        let sock = request(b"\"PickWindow\"\n")?;
+        let mut barrier = BufReader::new(request(b"\"Version\"\n")?);
+        read_reply(&mut barrier, &mut Vec::new()).ok()?;
+        Some(Pick { reader: BufReader::new(sock), reply: Vec::new() })
+    }
+
+    /// `None` if niri has not answered within `timeout`.
+    pub fn answer(&mut self, timeout: Duration) -> Option<Picked> {
+        self.reader.get_ref().set_read_timeout(Some(timeout)).ok()?;
+        match read_reply(&mut self.reader, &mut self.reply) {
+            Err(e) if matches!(e.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut) => None,
+            Err(_) => Some(Picked::Unknown),
+            Ok(()) => Some(picked(&self.reply)),
+        }
+    }
+}
+
+/// niri's compact reply: `{"Ok":{"PickedWindow":null}}` or the window object.
+pub fn picked(reply: &[u8]) -> Picked {
+    const PREFIX: &[u8] = b"{\"Ok\":{\"PickedWindow\":";
+    match reply.strip_prefix(PREFIX) {
+        Some(rest) if rest.starts_with(b"null}") => Picked::Nothing,
+        Some(rest) if rest.starts_with(b"{") => Picked::Window,
+        _ => Picked::Unknown,
+    }
 }
 
 /// Extracts `logical.width` from niri's compact JSON reply. A quote inside a
@@ -49,5 +114,15 @@ mod tests {
         assert_eq!(logical_width(r#"{"Ok":{"FocusedOutput":null}}"#), None);
         assert_eq!(logical_width(r#"{"Err":"x"}"#), None);
         assert_eq!(logical_width(r#"{"model":"a\"logical\":{\"width\":5}","logical":{"width":0}}"#), None);
+    }
+
+    #[test]
+    fn pick_window_replies() {
+        assert_eq!(picked(b"{\"Ok\":{\"PickedWindow\":null}}\n"), Picked::Nothing);
+        let w = br#"{"Ok":{"PickedWindow":{"id":12,"title":"x","app_id":"y","pid":1,"workspace_id":1,"is_focused":true}}}"#;
+        assert_eq!(picked(w), Picked::Window);
+        assert_eq!(picked(br#"{"Err":"error parsing request"}"#), Picked::Unknown);
+        assert_eq!(picked(b"{\"Ok\":{\"PickedWindow\":nu"), Picked::Unknown);
+        assert_eq!(picked(b""), Picked::Unknown);
     }
 }

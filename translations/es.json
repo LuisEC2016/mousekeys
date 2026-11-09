@@ -47,8 +47,8 @@
   "Mouse keys for niri": {
     "Mouse keys for niri": "Teclas de ratón para niri"
   },
-  "Super+Ctrl+arrows move the pointer and accelerate while held. Super+Ctrl+Enter clicks when you release the keys, Super+Ctrl+Space taps right-click, double taps left-click and holds to drag. Changes apply instantly.": {
-    "Super+Ctrl+arrows move the pointer and accelerate while held. Super+Ctrl+Enter clicks when you release the keys, Super+Ctrl+Space taps right-click, double taps left-click and holds to drag. Changes apply instantly.": "Super+Ctrl+flechas mueven el puntero y aceleran mientras las mantienes. Super+Ctrl+Enter hace clic al soltar las teclas; Super+Ctrl+Espacio: un toque es clic derecho, doble toque clic izquierdo y mantener arrastra. Los cambios se aplican al momento."
+  "Super+Ctrl+arrows move the pointer and accelerate while held. Super+Ctrl+Enter clicks when you release the keys, Super+Ctrl+Space taps left-click, double taps right-click and holds to drag. Changes apply instantly.": {
+    "Super+Ctrl+arrows move the pointer and accelerate while held. Super+Ctrl+Enter clicks when you release the keys, Super+Ctrl+Space taps left-click, double taps right-click and holds to drag. Changes apply instantly.": "Super+Ctrl+flechas mueven el puntero y aceleran mientras las mantienes. Super+Ctrl+Enter hace clic al soltar las teclas; Super+Ctrl+Espacio: un toque es clic izquierdo, doble toque clic derecho y mantener arrastra. Los cambios se aplican al momento."
   },
   "Run diagnostics": {
     "Run diagnostics": "Diagnóstico"
@@ -125,8 +125,8 @@
   "Double tap window": {
     "Double tap window": "Ventana de doble toque"
   },
-  "Maximum gap between two Space taps. It is also the delay of the single-tap right click.": {
-    "Maximum gap between two Space taps. It is also the delay of the single-tap right click.": "Separación máxima entre dos toques de Espacio. Es también lo que tarda el clic derecho de un toque."
+  "Maximum gap between two Space taps. It is also the delay of the single-tap left click.": {
+    "Maximum gap between two Space taps. It is also the delay of the single-tap left click.": "Separación máxima entre dos toques de Espacio. Es también lo que tarda el clic izquierdo de un toque."
   },
   "Click timeout": {
     "Click timeout": "Límite de espera del clic"
@@ -149,10 +149,10 @@
   "Distance of Super+Ctrl+Shift+Left/Right when niri does not report the focused output width.": {
     "Distance of Super+Ctrl+Shift+Left/Right when niri does not report the focused output width.": "Distancia de Super+Ctrl+Shift+←/→ cuando niri no informa del ancho del monitor enfocado."
   },
-  "Drag after releasing Super and Ctrl": {
-    "Drag after releasing Super and Ctrl": "Arrastrar al soltar Super y Ctrl"
+  "Wait for Super and Ctrl over windows": {
+    "Wait for Super and Ctrl over windows": "Esperar a Super y Ctrl sobre ventanas"
   },
-  "Hold Super+Ctrl+Space, release Super and Ctrl and keep Space down: the button goes down then. Needed on stock niri, which takes Super + left button as \"move window\". Turn it off only with niri patch 0004.": {
-    "Hold Super+Ctrl+Space, release Super and Ctrl and keep Space down: the button goes down then. Needed on stock niri, which takes Super + left button as \"move window\". Turn it off only with niri patch 0004.": "Mantén Super+Ctrl+Espacio, suelta Super y Ctrl y sigue con Espacio pulsado: entonces baja el botón. Necesario en niri sin parchear, que toma Super + botón izquierdo como «mover ventana». Desactívalo solo con el parche 0004 de niri."
+  "Over a window, clicks wait until you release Super and Ctrl, and the drag until you release them with Space still down: stock niri takes Super + button there to move or resize the window. Over DMS panels they go out at once. Turn it off only with niri patch 0004: then they go out at once everywhere, and the application sees Super and Ctrl held (Ctrl+click on a link opens a new tab).": {
+    "Over a window, clicks wait until you release Super and Ctrl, and the drag until you release them with Space still down: stock niri takes Super + button there to move or resize the window. Over DMS panels they go out at once. Turn it off only with niri patch 0004: then they go out at once everywhere, and the application sees Super and Ctrl held (Ctrl+click on a link opens a new tab).": "Sobre una ventana, los clics esperan a que sueltes Super y Ctrl, y el arrastre a que los sueltes sin soltar Espacio: niri sin parchear toma ahí Super + botón para mover o redimensionar la ventana. Sobre los paneles de DMS salen al momento. Desactívalo solo con el parche 0004 de niri: entonces salen al momento en todas partes y la aplicación ve Super y Ctrl pulsados (Ctrl+clic en un enlace abre una pestaña nueva)."
   }
 }

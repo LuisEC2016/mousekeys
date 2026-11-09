@@ -11,7 +11,7 @@ use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 use crate::config::Config;
-use crate::evdev::{Candidates, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_SPACE, KEY_UP, Keyboards, MODIFIERS};
+use crate::evdev::{Candidates, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_SPACE, KEY_UP, KeyState, Keyboards, MODIFIERS};
 use crate::ipc::{self, Recv};
 use crate::niri;
 use crate::wayland::{VirtualPointer, WlError};
@@ -19,6 +19,12 @@ use crate::wayland::{VirtualPointer, WlError};
 pub const BTN_LEFT: u32 = 0x110;
 pub const BTN_RIGHT: u32 = 0x111;
 pub const BTN_MIDDLE: u32 = 0x112;
+/// Button for `over_window`, which niri's pick grab swallows. It is outside
+/// the mouse range (0x110..0x120): if it ever reached a client, Qt, GTK and
+/// browsers would ignore it, and niri does not treat it as left, right or
+/// middle, so it cannot start a Mod gesture either.
+const PROBE_BUTTON: u32 = 0x2e7; // BTN_TRIGGER_HAPPY40
+const PROBE_TIMEOUT: Duration = Duration::from_millis(50);
 
 pub fn button_code(name: &str) -> Option<u32> {
     match name {
@@ -114,6 +120,12 @@ struct Space {
     kbd: Keyboards,
     t0: f64,
     t_up: f64,
+    /// The pointer moved while Space was down: the button would go down
+    /// wherever the pointer ended up, not where Space was pressed.
+    moved: bool,
+    /// Whether niri would take Mod + left button at the press point, asked
+    /// once, the first time the drag could start with modifiers held.
+    over_window: Option<bool>,
 }
 
 pub struct Daemon {
@@ -192,16 +204,19 @@ impl Daemon {
             self.vp.motion(0.0, 0.0)?;
         }
         match cmd {
-            Cmd::Move(hint) => self.start_move(hint)?,
-            Cmd::Click(code) => self.queue_click(code),
-            Cmd::Space => self.space_press(self.now()),
+            Cmd::Move(hint) => {
+                self.drag_before_moving()?;
+                self.start_move(hint)?;
+            }
+            Cmd::Click(code) => self.queue_click(code)?,
+            Cmd::Space => self.space_press(self.now())?,
             Cmd::Jump(sign) => {
                 // niri clamps the motion at the outer edge: jumping "out" does nothing.
                 let w = niri::focused_output_width().unwrap_or(self.cfg.jump_fallback);
-                self.vp.motion(sign * w, 0.0)?;
+                self.motion(sign * w, 0.0)?;
             }
             Cmd::Nudge(dx, dy) => {
-                self.vp.motion(dx, dy)?;
+                self.motion(dx, dy)?;
                 self.vp.roundtrip()?;
             }
             Cmd::Config(pairs) => {
@@ -227,7 +242,7 @@ impl Daemon {
         let kbd = self.keyboards();
         if kbd.is_empty() {
             let step = self.cfg.fallback_step;
-            return self.vp.motion(hint.0 * step, hint.1 * step);
+            return self.motion(hint.0 * step, hint.1 * step);
         }
         self.mv = Some(Move { kbd, t0: now, last: now, hint, moved: false });
         Ok(())
@@ -246,7 +261,7 @@ impl Daemon {
             if !moved {
                 // Press shorter than the first poll.
                 let step = self.cfg.min_step;
-                self.vp.motion(hint.0 * step, hint.1 * step)?;
+                self.motion(hint.0 * step, hint.1 * step)?;
             }
             drop(done);
             return Ok(());
@@ -258,42 +273,147 @@ impl Daemon {
             let diag = if dx != 0.0 && dy != 0.0 { SQRT_2 } else { 1.0 };
             let dist = self.cfg.speed(now - m.t0) * dt / diag;
             m.moved = true;
-            self.vp.motion(dx * dist, dy * dist)?;
+            self.motion(dx * dist, dy * dist)?;
         }
         Ok(())
     }
 
-    fn queue_click(&mut self, code: u32) {
+    /// An arrow while Space is still held means a drag, not a tap: if the
+    /// button may go down now (see `drag_blocked`), it goes down before the
+    /// pointer moves, so the drag starts where Space was pressed instead of
+    /// after `holdMs`.
+    fn drag_before_moving(&mut self) -> Result<(), WlError> {
+        let Some(s) = self.space.as_ref().filter(|s| s.phase == Phase::Down) else {
+            return Ok(());
+        };
+        let state = s.kbd.state();
+        if !state.is_down(KEY_SPACE) || self.drag_blocked(&state)? {
+            return Ok(());
+        }
+        self.start_drag()
+    }
+
+    fn start_drag(&mut self) -> Result<(), WlError> {
+        if let Some(s) = self.space.as_mut() {
+            s.phase = Phase::Drag;
+        }
+        self.held = Some(BTN_LEFT);
+        self.vp.button(BTN_LEFT, true)
+    }
+
+    /// With `dragWaitMods`, the drag button waits for Super, Ctrl, Alt and
+    /// Shift to be released only where stock niri would take Mod + left
+    /// button as "move window": over a window. Over a DMS panel it goes down
+    /// with the modifiers held. The answer is asked once per press, at the
+    /// press point; if the pointer already left it, the old rule applies.
+    fn drag_blocked(&mut self, state: &KeyState) -> Result<bool, WlError> {
+        if !self.cfg.waits_for_mods() || !state.any_of(&MODIFIERS) {
+            return Ok(false);
+        }
+        let Some(s) = self.space.as_ref() else {
+            return Ok(true);
+        };
+        if let Some(known) = s.over_window {
+            return Ok(known);
+        }
+        if s.moved {
+            return Ok(true);
+        }
+        let over = self.over_window()?;
+        if let Some(s) = self.space.as_mut() {
+            s.over_window = Some(over);
+        }
+        Ok(over)
+    }
+
+    /// Whether niri would take Mod + left/right button at the pointer as
+    /// "move/resize window" (see `niri::Pick`). When in doubt (no niri socket,
+    /// no answer), `true`: the button waits for the modifiers, as it always did.
+    ///
+    /// The pick grab sends the surface under the pointer a leave and an enter,
+    /// so it is only asked when modifiers are held, and never while a button
+    /// is down (it would break the application's implicit grab).
+    fn over_window(&mut self) -> Result<bool, WlError> {
+        if self.held.is_some() {
+            return Ok(true);
+        }
+        // Nothing of ours left unread in niri: the probe button goes after the grab.
+        self.vp.roundtrip()?;
+        let Some(mut pick) = niri::Pick::start() else {
+            return Ok(true);
+        };
+        for _ in 0..2 {
+            self.vp.button(PROBE_BUTTON, true)?;
+            self.vp.button(PROBE_BUTTON, false)?;
+            if let Some(picked) = pick.answer(PROBE_TIMEOUT) {
+                return Ok(picked != niri::Picked::Nothing);
+            }
+            // The button beat the grab: one more press ends the pick.
+        }
+        log!(
+            "{}",
+            tr!(
+                "niri did not answer pick-window; the button waits for the modifiers",
+                "niri no respondió a pick-window; el botón espera a los modificadores"
+            )
+        );
+        Ok(true)
+    }
+
+    /// Moves the pointer, noting it in a Space press whose button has not
+    /// gone down yet.
+    fn motion(&mut self, dx: f64, dy: f64) -> Result<(), WlError> {
+        self.vp.motion(dx, dy)?;
+        if dx != 0.0 || dy != 0.0 {
+            if let Some(s) = self.space.as_mut().filter(|s| s.phase == Phase::Down) {
+                s.moved = true;
+            }
+        }
+        Ok(())
+    }
+
+    /// Clicks wait until every key is released: stock niri takes Super +
+    /// button over a window, and the application would see Ctrl. With
+    /// modifiers held the click goes out right away, so Super+Ctrl can stay
+    /// down as a mode, where niri lets it through: over a DMS panel (no window
+    /// under the pointer), or anywhere with `dragWaitMods` off (patch 0004),
+    /// where the application does see the modifiers.
+    fn queue_click(&mut self, code: u32) -> Result<(), WlError> {
         if self.clicks.len() >= MAX_CLICKS {
-            return;
+            return Ok(());
         }
         if self.clicks.is_empty() && !self.click_ready {
             self.click_kbd = self.keyboards();
             self.click_deadline = self.now() + self.cfg.click_timeout;
+            if self.click_kbd.state().any_of(&MODIFIERS) && !(self.cfg.waits_for_mods() && self.over_window()?) {
+                self.click_kbd = Keyboards::default();
+                self.click_ready = true;
+                self.click_next = self.now();
+            }
         }
         self.clicks.push(code);
+        Ok(())
     }
 
-    fn space_press(&mut self, now: f64) {
+    fn space_press(&mut self, now: f64) -> Result<(), WlError> {
         if let Some(s) = &self.space {
             if s.phase != Phase::Wait {
-                return; // Space already down: niri does not repeat (repeat=false)
+                return Ok(()); // Space already down: niri does not repeat (repeat=false)
             }
             let t_up = s.t_up;
             self.space = None;
             if now - t_up <= self.cfg.double_t {
-                self.queue_click(BTN_LEFT); // double tap
-                return;
+                return self.queue_click(BTN_RIGHT); // double tap
             }
-            self.queue_click(BTN_RIGHT); // the wait expired before it was polled
+            self.queue_click(BTN_LEFT)?; // the wait expired before it was polled
         }
         let kbd = self.keyboards();
         if kbd.is_empty() {
             // Without /dev/input there is no way to measure duration or a double tap.
-            self.queue_click(BTN_RIGHT);
-            return;
+            return self.queue_click(BTN_LEFT);
         }
-        self.space = Some(Space { phase: Phase::Down, kbd, t0: now, t_up: 0.0 });
+        self.space = Some(Space { phase: Phase::Down, kbd, t0: now, t_up: 0.0, moved: false, over_window: None });
+        Ok(())
     }
 
     fn step_space(&mut self, now: f64) -> Result<(), WlError> {
@@ -304,7 +424,7 @@ impl Daemon {
             // >= and not >: poll wakes up exactly at the deadline (see `timeout_ms`).
             if now - s.t_up >= self.cfg.double_t {
                 self.space = None;
-                self.queue_click(BTN_RIGHT); // single tap
+                self.queue_click(BTN_LEFT)?; // single tap
             }
             return Ok(());
         }
@@ -313,10 +433,14 @@ impl Daemon {
         let state = s.kbd.state();
         let down = state.is_down(KEY_SPACE);
         let long = now - s.t0 >= self.cfg.hold_t;
-        // With dragWaitMods the button waits until Super, Ctrl, Alt and Shift
-        // are released (Space still held): on stock niri, Mod + left button is
-        // "move window" and the application would never see the press.
-        let mods_block = self.cfg.drag_waits_for_mods() && state.any_of(&MODIFIERS);
+        // With dragWaitMods, over a window the button waits until Super,
+        // Ctrl, Alt and Shift are released (Space still held): on stock niri,
+        // Mod + left button there is "move window" and the application would
+        // never see the press.
+        let mods_block = s.phase == Phase::Down && down && long && self.drag_blocked(&state)?;
+        let Some(s) = self.space.as_mut() else {
+            return Ok(());
+        };
         match s.phase {
             Phase::Down if !down && long => {
                 // A long press released before the drag could start is not a tap.
@@ -324,8 +448,8 @@ impl Daemon {
                 log!(
                     "{}",
                     tr!(
-                        "drag not started: release Super and Ctrl before Space (dragWaitMods)",
-                        "arrastre no iniciado: suelta Super y Ctrl antes que Space (dragWaitMods)"
+                        "drag not started: release Super and Ctrl while keeping Space down (dragWaitMods)",
+                        "arrastre no iniciado: suelta Super y Ctrl sin soltar Space (dragWaitMods)"
                     )
                 );
             }
@@ -333,11 +457,20 @@ impl Daemon {
                 s.phase = Phase::Wait;
                 s.t_up = now;
             }
-            Phase::Down if long && !mods_block => {
-                s.phase = Phase::Drag;
-                self.held = Some(BTN_LEFT);
-                self.vp.button(BTN_LEFT, true)?;
+            Phase::Down if long && !mods_block && s.moved => {
+                // Pressing now would grab wherever the arrows left the pointer.
+                self.space = None;
+                log!(
+                    "{}",
+                    tr!(
+                        "drag not started: the pointer moved before the button went down. \
+                         Move only after releasing Super and Ctrl, with Space still down",
+                        "arrastre no iniciado: el puntero se movió antes de bajar el botón. \
+                         Mueve solo después de soltar Super y Ctrl, con Space aún pulsado"
+                    )
+                );
             }
+            Phase::Down if long && !mods_block => self.start_drag()?,
             Phase::Drag if !down => {
                 self.release_held()?; // the button first, then close the keyboards
                 self.space = None;
