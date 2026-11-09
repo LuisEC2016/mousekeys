@@ -22,8 +22,19 @@ pub const BTN_MIDDLE: u32 = 0x112;
 /// Button for `over_window`, which niri's pick grab swallows. It is outside
 /// the mouse range (0x110..0x120): if it ever reached a client, Qt, GTK and
 /// browsers would ignore it, and niri does not treat it as left, right or
-/// middle, so it cannot start a Mod gesture either.
-const PROBE_BUTTON: u32 = 0x2e7; // BTN_TRIGGER_HAPPY40
+/// middle, so it cannot start a Mod gesture either. It must stay below 0x20b:
+/// Xwayland turns a code into X button `8 + code - BTN_SIDE`, and from 256 up
+/// (0x2e7 gave 476) it logs a BUG backtrace for every event that reaches an
+/// X11 window. 0x13e (X button 51) logs nothing.
+///
+/// The pick grab adds the press to the seat's list of pressed buttons, but
+/// niri drops the release before the seat sees it (`suppressed_buttons`
+/// returns ahead of `pointer.button`). A real button is cleared by its next
+/// release; no device ever releases this code, so it would stay "held": the
+/// next real click starts smithay's click grab, which only ends when no button
+/// is pressed, and the physical mouse keeps sending motion and clicks to that
+/// one surface. `unstick_probe` sends the release niri swallowed.
+const PROBE_BUTTON: u32 = 0x13e; // BTN_THUMBR
 const PROBE_TIMEOUT: Duration = Duration::from_millis(50);
 
 pub fn button_code(name: &str) -> Option<u32> {
@@ -342,13 +353,19 @@ impl Daemon {
         let Some(mut pick) = niri::Pick::start() else {
             return Ok(true);
         };
+        let mut picked = None;
         for _ in 0..2 {
             self.vp.button(PROBE_BUTTON, true)?;
             self.vp.button(PROBE_BUTTON, false)?;
-            if let Some(picked) = pick.answer(PROBE_TIMEOUT) {
-                return Ok(picked != niri::Picked::Nothing);
+            picked = pick.answer(PROBE_TIMEOUT);
+            if picked.is_some() {
+                break;
             }
             // The button beat the grab: one more press ends the pick.
+        }
+        self.unstick_probe()?;
+        if let Some(picked) = picked {
+            return Ok(picked != niri::Picked::Nothing);
         }
         log!(
             "{}",
@@ -358,6 +375,14 @@ impl Daemon {
             )
         );
         Ok(true)
+    }
+
+    /// Releases `PROBE_BUTTON` in niri's seat. The release goes after the
+    /// probe's own release, which niri swallows, so it is the one the seat
+    /// sees; with nothing pressed it is a no-op there, and the client under
+    /// the pointer gets a release of a code it ignores.
+    fn unstick_probe(&mut self) -> Result<(), WlError> {
+        self.vp.button(PROBE_BUTTON, false)
     }
 
     /// Moves the pointer, noting it in a Space press whose button has not
@@ -599,6 +624,9 @@ impl Daemon {
         let pollfd = |fd| libc::pollfd { fd, events: libc::POLLIN, revents: 0 };
         let mut stdin_open = true;
         let mut stdin_buf = Vec::new();
+        // A daemon that died between a probe press and `unstick_probe` left
+        // the probe button held in niri's seat; this clears it.
+        self.unstick_probe()?;
         loop {
             if self.exit.is_some() {
                 return Ok(Exit::Quit);
